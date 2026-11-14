@@ -1,4 +1,4 @@
-torch>=2.1
+torch>=2.3  # torch.amp.GradScaler を使うため
 timm>=1.0
 numpy
 pillow

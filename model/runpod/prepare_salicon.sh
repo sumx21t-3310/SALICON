@@ -25,7 +25,13 @@ for name in images maps fixations; do
   tmp="$(mktemp -d "$DST/.tmp_$name.XXXX")"
   unzip -q "$zip" -d "$tmp"
   # zip によって最上位フォルダの有無が違うため、train/ を含む階層を探して移動する
-  inner="$(dirname "$(find "$tmp" -type d -name train | head -n1)")"
+  train_dir="$(find "$tmp" -type d -name train -print -quit)"
+  if [[ -z "$train_dir" ]]; then
+    echo "error: $zip に train/ ディレクトリがありません（展開を中止）" >&2
+    rm -rf "$tmp"; exit 1
+  fi
+  inner="$(dirname "$train_dir")"
+  case "$inner" in "$tmp"|"$tmp"/*) ;; *) echo "error: 想定外の展開先 $inner" >&2; rm -rf "$tmp"; exit 1;; esac
   mkdir -p "$DST/$name"
   mv "$inner"/* "$DST/$name/"
   rm -rf "$tmp"
