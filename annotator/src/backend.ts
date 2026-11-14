@@ -39,15 +39,27 @@ export async function pickFolder(title: string): Promise<string | null> {
   return typeof r === "string" ? r : null;
 }
 
-/** フォルダー内の画像を読み込み、Blob URL にする */
+/** Blob URL を解放する */
+export function revokeImages(images: LoadedImage[]): void {
+  for (const i of images) {
+    if (i.src.startsWith("blob:")) URL.revokeObjectURL(i.src);
+  }
+}
+
+/** フォルダー内の画像を読み込み、Blob URL にする。途中で失敗したら作った分を解放する */
 export async function loadFolderImages(dir: string): Promise<LoadedImage[]> {
   const entries = await invoke<ImageEntry[]>("list_images", { dir });
   const out: LoadedImage[] = [];
-  for (const e of entries) {
-    const buf = await invoke<ArrayBuffer>("read_image", { path: e.path });
-    const ext = e.path.split(".").pop()?.toLowerCase() ?? "";
-    const blob = new Blob([buf], { type: MIME[ext] ?? "application/octet-stream" });
-    out.push({ id: e.id, src: URL.createObjectURL(blob) });
+  try {
+    for (const e of entries) {
+      const buf = await invoke<ArrayBuffer>("read_image", { path: e.path });
+      const ext = e.path.split(".").pop()?.toLowerCase() ?? "";
+      const blob = new Blob([buf], { type: MIME[ext] ?? "application/octet-stream" });
+      out.push({ id: e.id, src: URL.createObjectURL(blob) });
+    }
+  } catch (err) {
+    revokeImages(out);
+    throw err;
   }
   return out;
 }

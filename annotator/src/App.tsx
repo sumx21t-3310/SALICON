@@ -5,6 +5,7 @@ import {
   loadFileListImages,
   loadFolderImages,
   pickFolder,
+  revokeImages,
   saveResult,
   type LoadedImage,
 } from "./backend";
@@ -82,12 +83,32 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** 画像の一覧を差し替え、古い Blob URL を解放する */
+  function replaceImages(key: "imageDir" | "practiceDir", next: LoadedImage[]) {
+    const setter = key === "imageDir" ? setImages : setPractice;
+    setter((prev) => {
+      revokeImages(prev);
+      return next;
+    });
+  }
+
+  // アンマウント時に解放する
+  const latest = useRef({ images, practice });
+  latest.current = { images, practice };
+  useEffect(
+    () => () => {
+      revokeImages(latest.current.images);
+      revokeImages(latest.current.practice);
+    },
+    [],
+  );
+
   async function reload(key: "imageDir" | "practiceDir", dir: string) {
     setBusy(true);
     setMessage(null);
     try {
       const imgs = await loadFolderImages(dir);
-      (key === "imageDir" ? setImages : setPractice)(imgs);
+      replaceImages(key, imgs);
       set(key, dir);
     } catch (e) {
       setMessage(String(e));
@@ -154,17 +175,36 @@ export function App() {
     }
   }
 
-  function abort() {
-    setResult(snapshot(new Date().toISOString()));
+  async function abort() {
+    const r = snapshot(new Date().toISOString());
+    setResult(r);
     setScreen("result");
-    setMessage("セッションを中断しました。中断までの試行は保存されています。");
+    if (r.trials.length === 0) {
+      setMessage("セッションを中断しました。完了した試行はありません。");
+      return;
+    }
+    try {
+      // Tauri では途中保存済みのファイルに終了時刻を入れて上書き、ブラウザーではダウンロード
+      const p = await saveResult(settings.outputDir, session.current.fileName, r, tauri);
+      setSavedPath(p);
+      setMessage(`セッションを中断しました。中断までの ${r.trials.length} 試行を保存しました。`);
+    } catch (e) {
+      setMessage(`セッションを中断しましたが、保存に失敗しました: ${e}`);
+    }
+  }
+
+  /** ブラウザー用: 結果画面から JSON をもう一度ダウンロードする */
+  async function exportAgain() {
+    if (!result) return;
+    const p = await saveResult(null, session.current.fileName, result, false);
+    setSavedPath(p);
   }
 
   // Esc で中断
   useEffect(() => {
     if (screen !== "running") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") abort();
+      if (e.key === "Escape") void abort();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -196,6 +236,11 @@ export function App() {
         <h1 style={h1}>結果（{result.participantId}）</h1>
         {message && <p style={note}>{message}</p>}
         {savedPath && <p style={{ fontSize: 13 }}>保存先: {savedPath}</p>}
+        {!tauri && result.trials.length > 0 && (
+          <button type="button" style={{ ...btn, marginRight: 8 }} onClick={exportAgain}>
+            JSON を保存
+          </button>
+        )}
         <button type="button" style={btn} onClick={() => setScreen("setup")}>
           設定に戻る
         </button>
@@ -242,7 +287,7 @@ export function App() {
                   style={btnLink}
                   onClick={() => {
                     set("practiceDir", "");
-                    setPractice([]);
+                    replaceImages("practiceDir", []);
                   }}
                 >
                   解除
@@ -264,7 +309,7 @@ export function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={(e) => e.target.files && setImages(loadFileListImages(e.target.files))}
+                onChange={(e) => e.target.files && replaceImages("imageDir", loadFileListImages(e.target.files))}
               />
               <span style={muted}>{images.length} 枚</span>
             </Row>
@@ -273,7 +318,7 @@ export function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={(e) => e.target.files && setPractice(loadFileListImages(e.target.files))}
+                onChange={(e) => e.target.files && replaceImages("practiceDir", loadFileListImages(e.target.files))}
               />
               <span style={muted}>{practice.length} 枚</span>
             </Row>

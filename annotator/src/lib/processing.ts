@@ -3,9 +3,10 @@
  * SALICON 論文の手順に合わせている。
  *
  * 1. 12 Hz 未満の試行を破棄する
- * 2. 形状保存区分 3 次補間（PCHIP）で 100 Hz に再標本化する
- * 3. 被験者ごとに速度の大きい半分のサンプル（サッカード）を除く
- * 4. 残ったサンプルを集計し、ガウシアンフィルターでぼかす
+ * 2. 静止中の位置を補う（開始時の中央、最初の移動まで、最後の移動から提示終了まで）
+ * 3. 形状保存区分 3 次補間（PCHIP）で 100 Hz に再標本化する
+ * 4. 被験者ごとに速度の大きい半分のサンプル（サッカード）を除く
+ * 5. 残ったサンプルを集計し、ガウシアンフィルターでぼかす
  *
  * 論文はマップ生成時のガウシアンの σ を明記していないため、既定値は 1 度
  * （pixelsPerDegree 画素）とした。必要に応じて変更すること。
@@ -115,10 +116,36 @@ export function isValidTrial(trial: TrialResult, minSamplingHz = 12): boolean {
   return trial.completed && trial.samples.length > 0 && trial.quality.samplingRateHz >= minSamplingHz;
 }
 
+/**
+ * マウスイベントは動いたときにしか発生しないため、静止中の注視を補った軌跡を作る。
+ * - 開始位置（startGaze）を t=0 と最初のイベントの直前に置く
+ * - 最後のイベントの位置を提示終了時刻（completed の場合）まで保持する
+ * 品質判定（サンプリング周波数）には使わない。
+ */
+export function gazeTrack(trial: TrialResult): GazeSample[] {
+  const s = dedupe(trial.samples.filter((p) => p.t >= 0 && p.t <= trial.durationMs));
+  const out: GazeSample[] = [];
+  const start = trial.startGaze;
+  if (start) {
+    const first = s.length ? s[0].t : trial.durationMs;
+    if (first > 0) out.push({ t: 0, ...start });
+    if (first > HOLD_GAP_MS) out.push({ t: first - HOLD_GAP_MS, ...start });
+  }
+  out.push(...s);
+  const last = out[out.length - 1];
+  if (last && trial.completed && trial.durationMs - last.t > HOLD_GAP_MS) {
+    out.push({ t: trial.durationMs, x: last.x, y: last.y });
+  }
+  return out;
+}
+
+/** 静止区間を補うときに、移動の直前・直後に置く間隔（ms） */
+const HOLD_GAP_MS = 10;
+
 /** 1 試行から注視点（サッカードを除いたサンプル）を得る */
 export function extractFixations(trial: TrialResult, opts: ProcessOptions = {}): GazeSample[] {
   const { resampleHz = 100, keepRatio = 0.5 } = opts;
-  const pts = removeSaccades(resample(trial.samples, resampleHz), keepRatio);
+  const pts = removeSaccades(resample(gazeTrack(trial), resampleHz), keepRatio);
   return pts.filter((p) => p.x >= 0 && p.y >= 0 && p.x < trial.imageWidth && p.y < trial.imageHeight);
 }
 

@@ -8,6 +8,7 @@ export {
   removeSaccades,
   isValidTrial,
   extractFixations,
+  gazeTrack,
   buildFixationCounts,
   buildSaliencyMap,
   gaussianBlur,

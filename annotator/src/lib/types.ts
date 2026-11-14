@@ -56,6 +56,12 @@ export interface TrialResult {
   startedAt: string;
   /** 途中で中断された場合 false */
   completed: boolean;
+  /**
+   * 提示開始時の注視点（画像の元解像度の画素）。中央クリックで開始した場合は画像中央、
+   * それ以外は null。マウスが動くまでの静止中の注視を後処理で補うために使う。
+   */
+  startGaze: { x: number; y: number } | null;
+  /** 記録したマウスイベント（実測値のみ。品質判定はこれだけで行う） */
   samples: GazeSample[];
   quality: TrialQuality;
   foveation: FoveationParams;

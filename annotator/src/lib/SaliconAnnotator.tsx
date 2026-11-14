@@ -173,6 +173,7 @@ export function SaliconAnnotator({
         durationMs,
         startedAt: r.startedAt,
         completed,
+        startGaze: requireCenterStart && natural ? { x: natural.w / 2, y: natural.h / 2 } : null,
         samples,
         quality: {
           samplingRateHz: Math.round(hz * 100) / 100,
@@ -189,7 +190,7 @@ export function SaliconAnnotator({
       onCompleteRef.current?.(result);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [durationMs, imageId, src, natural, displayW, displayH, paramsKey],
+    [durationMs, imageId, src, natural, displayW, displayH, paramsKey, requireCenterStart],
   );
 
   const start = useCallback(() => {
