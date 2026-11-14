@@ -64,12 +64,28 @@ export async function loadFolderImages(dir: string): Promise<LoadedImage[]> {
   return out;
 }
 
-/** ブラウザー用: input[type=file] で選んだファイルを読み込む */
+/** 画像 ID（ファイル名の stem）の重複を返す */
+export function duplicateIds(ids: string[]): string[] {
+  const seen = new Set<string>();
+  const dups = new Set<string>();
+  for (const id of ids) (seen.has(id) ? dups : seen).add(id);
+  return [...dups].sort();
+}
+
+/**
+ * ブラウザー用: input[type=file] で選んだファイルを読み込む。
+ * 拡張子だけが違う同名の画像があると画像 ID が重複するため、エラーにする。
+ */
 export function loadFileListImages(files: FileList): LoadedImage[] {
-  return Array.from(files)
+  const list = Array.from(files)
     .filter((f) => f.type.startsWith("image/"))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((f) => ({ id: f.name.replace(/\.[^.]+$/, ""), src: URL.createObjectURL(f) }));
+    .map((f) => ({ id: f.name.replace(/\.[^.]+$/, ""), file: f }));
+  const dups = duplicateIds(list.map((i) => i.id));
+  if (dups.length) {
+    throw new Error(`拡張子だけが違う同名の画像があります。画像 ID が重複するため、名前を変えてください: ${dups.join(", ")}`);
+  }
+  return list.map((i) => ({ id: i.id, src: URL.createObjectURL(i.file) }));
 }
 
 /**

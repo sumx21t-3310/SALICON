@@ -41,6 +41,16 @@ pub fn list_images_in(dir: &Path) -> Result<Vec<ImageEntry>, String> {
         })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
+    // 画像 ID は結果と学習データの対応付けに使うため、拡張子違いの同名ファイルは受け付けない
+    let dups: Vec<&str> = out.windows(2).filter(|w| w[0].id == w[1].id).map(|w| w[0].id.as_str()).collect();
+    if !dups.is_empty() {
+        let mut d = dups;
+        d.dedup();
+        return Err(format!(
+            "拡張子だけが違う同名の画像があります。画像 ID が重複するため、名前を変えてください: {}",
+            d.join(", ")
+        ));
+    }
     Ok(out)
 }
 
@@ -111,6 +121,17 @@ mod tests {
         fs::create_dir(d.path().join("sub.png")).unwrap();
         let ids: Vec<_> = list_images_in(d.path()).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn rejects_duplicate_stems() {
+        let d = tempfile::tempdir().unwrap();
+        for f in ["screen.jpg", "screen.png", "other.png"] {
+            fs::write(d.path().join(f), b"x").unwrap();
+        }
+        let err = list_images_in(d.path()).unwrap_err();
+        assert!(err.contains("screen"));
+        assert!(!err.contains("other"));
     }
 
     #[test]

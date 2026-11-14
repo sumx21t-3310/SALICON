@@ -103,6 +103,18 @@ export function App() {
     [],
   );
 
+  /** ブラウザー用: 選んだファイルを読み込む（ID が重複していれば読み込まない） */
+  function pickFiles(key: "imageDir" | "practiceDir", files: FileList | null) {
+    if (!files) return;
+    try {
+      replaceImages(key, loadFileListImages(files));
+      setMessage(null);
+    } catch (e) {
+      replaceImages(key, []);
+      setMessage(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function reload(key: "imageDir" | "practiceDir", dir: string) {
     setBusy(true);
     setMessage(null);
@@ -309,7 +321,7 @@ export function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={(e) => e.target.files && replaceImages("imageDir", loadFileListImages(e.target.files))}
+                onChange={(e) => pickFiles("imageDir", e.target.files)}
               />
               <span style={muted}>{images.length} 枚</span>
             </Row>
@@ -318,7 +330,7 @@ export function App() {
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={(e) => e.target.files && replaceImages("practiceDir", loadFileListImages(e.target.files))}
+                onChange={(e) => pickFiles("practiceDir", e.target.files)}
               />
               <span style={muted}>{practice.length} 枚</span>
             </Row>
