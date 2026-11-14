@@ -15,7 +15,7 @@ def _flat(x):
 
 def _norm_sum(x):
     x = _flat(x)
-    return x / (x.sum(1, keepdim=True) + EPS)
+    return x / x.sum(1, keepdim=True).clamp_min(EPS)
 
 
 def _standardize(x):
@@ -24,8 +24,12 @@ def _standardize(x):
 
 
 def kld(pred, gt):
+    # 分母だけに eps を足すと高解像度で偏りが出る（同一分布でも 0 にならない）ため、
+    # 確率を下限でクランプしてから対数比を取る。q=0 の画素は寄与 0。
     p, q = _norm_sum(pred), _norm_sum(gt)
-    return (q * torch.log(EPS + q / (p + EPS))).sum(1)
+    tiny = torch.finfo(p.dtype).tiny
+    log_ratio = torch.log(q.clamp_min(tiny)) - torch.log(p.clamp_min(tiny))
+    return torch.where(q > 0, q * log_ratio, torch.zeros_like(q)).sum(1)
 
 
 def cc(pred, gt):
@@ -44,22 +48,29 @@ def nss(pred, fix):
 
 
 def auc_judd(pred, fix):
-    """AUC-Judd。注視点の値をしきい値として ROC 曲線下面積を求める。"""
+    """AUC-Judd。注視点の値をしきい値として ROC 曲線下面積を求める。
+
+    同じ値の注視点が複数ある場合は 1 つのしきい値にまとめ、そのしきい値以上の
+    注視点をすべて数える（一様なマップでチャンスレベル 0.5 になる）。
+    """
     out = []
     for p, f in zip(_flat(pred), _flat(fix)):
         p = (p - p.min()) / (p.max() - p.min() + EPS)
-        thr = p[f > 0]
-        n_fix, n_pix = thr.numel(), p.numel()
-        if n_fix == 0:
+        fix_vals = p[f > 0]
+        n_fix, n_pix = fix_vals.numel(), p.numel()
+        if n_fix == 0 or n_fix == n_pix:
             out.append(torch.tensor(float("nan"), device=p.device))
             continue
-        thr, _ = thr.sort(descending=True)
-        sorted_all, _ = p.sort()
-        # 各しきい値以上の画素数（二分探索）
-        above = n_pix - torch.searchsorted(sorted_all, thr, right=False)
-        tp = torch.cat([p.new_zeros(1), torch.arange(1, n_fix + 1, device=p.device) / n_fix, p.new_ones(1)])
-        fp = torch.cat([p.new_zeros(1), (above - torch.arange(1, n_fix + 1, device=p.device)) / (n_pix - n_fix), p.new_ones(1)])
-        out.append(torch.trapz(tp, fp))
+        fix_sorted, _ = fix_vals.sort()
+        all_sorted, _ = p.sort()
+        thr = torch.unique(fix_vals).flip(0)  # 降順
+        # 各しきい値以上の画素数・注視点数（二分探索）
+        n_above_all = n_pix - torch.searchsorted(all_sorted, thr, right=False)
+        n_above_fix = n_fix - torch.searchsorted(fix_sorted, thr, right=False)
+        tp = n_above_fix.to(p.dtype) / n_fix
+        fp = (n_above_all - n_above_fix).to(p.dtype) / (n_pix - n_fix)
+        zero, one = p.new_zeros(1), p.new_ones(1)
+        out.append(torch.trapz(torch.cat([zero, tp, one]), torch.cat([zero, fp, one])))
     return torch.stack(out)
 
 

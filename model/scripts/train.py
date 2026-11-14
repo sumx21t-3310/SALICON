@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -57,7 +58,9 @@ def main():
 
     opt = torch.optim.AdamW(model.param_groups(tcfg["lr"], tcfg.get("backbone_lr_mult", 0.1),
                                                tcfg.get("weight_decay", 0.05)))
-    total = tcfg["epochs"] * len(train_dl) // tcfg.get("grad_accum", 1)
+    accum = tcfg.get("grad_accum", 1)
+    steps_per_epoch = math.ceil(len(train_dl) / accum)  # 端数の勾配もエポック末に 1 回で更新する
+    total = tcfg["epochs"] * steps_per_epoch
     sched = cosine_with_warmup(opt, int(total * tcfg.get("warmup_ratio", 0.05)), total)
     lw = cfg.get("loss", {})
     criterion = SaliencyLoss(lw.get("kld", 1.0), lw.get("cc", 0.5), lw.get("nss", 0.1))
@@ -65,7 +68,6 @@ def main():
     scaler = torch.amp.GradScaler(enabled=amp)
     monitor = tcfg.get("monitor", "CC")
     best = -float("inf")
-    accum = tcfg.get("grad_accum", 1)
     start_epoch = 0
     if args.resume and (out_dir / "last.pt").exists():
         ck = torch.load(out_dir / "last.pt", map_location="cpu", weights_only=False)
@@ -80,22 +82,27 @@ def main():
     for epoch in range(start_epoch, tcfg["epochs"]):
         model.train()
         t0, run = time.time(), 0.0
+        n_batches = len(train_dl)
+        opt.zero_grad(set_to_none=True)
         for it, batch in enumerate(train_dl):
+            # 最後の端数グループは、その実バッチ数で割って平均をそろえる
+            group_start = it // accum * accum
+            group_size = min(accum, n_batches - group_start)
             img = batch["image"].to(device, non_blocking=True)
             gt = batch["map"].to(device, non_blocking=True)
             fix = batch["fix"].to(device, non_blocking=True) if "fix" in batch else None
             with torch.autocast(device.type, enabled=amp):
                 logits = model(img)
-            loss = criterion(logits_to_prob(logits.float()), gt, fix) / accum
+            loss = criterion(logits_to_prob(logits.float()), gt, fix) / group_size
             scaler.scale(loss).backward()
-            if (it + 1) % accum == 0:
+            if (it + 1) % accum == 0 or it + 1 == n_batches:
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), tcfg.get("clip_grad", 1.0))
                 scaler.step(opt)
                 scaler.update()
                 opt.zero_grad(set_to_none=True)
                 sched.step()
-            run += loss.item() * accum
+            run += loss.item() * group_size
             if (it + 1) % tcfg.get("log_every", 50) == 0:
                 print(f"ep {epoch} it {it + 1}/{len(train_dl)} loss {run / (it + 1):.4f}", flush=True)
 
