@@ -1,0 +1,10 @@
+# DINOv2 バックボーン版。写真以外（イラスト・UI）への転移で有利なことが多い
+base: salicon_vitb16.yaml
+output_dir: runs/salicon_dinov2_vitb14
+data:
+  img_size: [378, 504]   # patch14 の倍数（27x36 トークン）
+model:
+  backbone: vit_base_patch14_dinov2.lvd142m
+  pos_embed_size: [378, 504]
+train:
+  batch_size: 12

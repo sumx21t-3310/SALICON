@@ -1,0 +1,16 @@
+# UI・キャラクターイラストへのファインチューニング例
+# SALICON で学習した重みを init_from に指定して使う
+base: salicon_vitb16.yaml
+output_dir: runs/finetune_ui
+init_from: runs/salicon_vitb16/best.pt
+data:
+  root: data/my_ui_dataset   # images/{train,val}, maps/{train,val}, fixations/{train,val}（任意）
+  img_size: [512, 288]       # 縦長のスマホ UI の例。横長の画面なら [288, 512] など
+model:
+  pretrained: false          # init_from の重みを使う
+  freeze_blocks: 6           # 小規模データでは前半ブロックを凍結して過学習を抑える
+train:
+  epochs: 30
+  batch_size: 8
+  lr: 5.0e-5
+  backbone_lr_mult: 0.1

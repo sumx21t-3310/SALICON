@@ -1,0 +1,30 @@
+# SALICON での学習（ベースモデル）
+seed: 0
+output_dir: runs/salicon_vitb16
+data:
+  root: data/salicon
+  img_size: [384, 512]   # 640x480 と同じ 3:4、patch16 で 24x32 トークン
+  num_workers: 8
+model:
+  backbone: vit_base_patch16_384.augreg_in21k_ft_in1k
+  pretrained: true
+  pos_embed_size: [384, 512]  # 位置埋め込みの基準サイズ（入力サイズは自由）
+  out_indices: null      # null なら 4 層を均等に取り出す（ViT-B なら 2,5,8,11）
+  decoder_ch: 256
+  drop_path_rate: 0.1
+  center_bias: true
+  freeze_blocks: 0
+loss:
+  kld: 1.0
+  cc: 0.5
+  nss: 0.1
+train:
+  epochs: 20
+  batch_size: 16
+  lr: 1.0e-4              # デコーダの学習率
+  backbone_lr_mult: 0.1   # エンコーダはその 0.1 倍
+  weight_decay: 0.05
+  warmup_ratio: 0.05
+  amp: true
+  monitor: CC
+  log_every: 50
