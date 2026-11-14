@@ -19,8 +19,11 @@ def _norm_sum(x):
 
 
 def _standardize(x):
+    # 確率マップ（総和 1）は値が非常に小さいため、std に固定の eps を足すと
+    # スケール不変性が崩れる。std が 0 の定数マップだけ 1 で割って 0 にする。
     x = _flat(x)
-    return (x - x.mean(1, keepdim=True)) / (x.std(1, keepdim=True) + EPS)
+    std = x.std(1, keepdim=True)
+    return (x - x.mean(1, keepdim=True)) / torch.where(std > 0, std, torch.ones_like(std))
 
 
 def kld(pred, gt):
@@ -55,7 +58,8 @@ def auc_judd(pred, fix):
     """
     out = []
     for p, f in zip(_flat(pred), _flat(fix)):
-        p = (p - p.min()) / (p.max() - p.min() + EPS)
+        rng = p.max() - p.min()
+        p = (p - p.min()) / (rng if rng > 0 else 1.0)
         fix_vals = p[f > 0]
         n_fix, n_pix = fix_vals.numel(), p.numel()
         if n_fix == 0 or n_fix == n_pix:
